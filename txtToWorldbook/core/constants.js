@@ -28,7 +28,8 @@ export const DEFAULT_PARALLEL_CONFIG = {
 };
 
 export const defaultSettings = {
-    chunkSize: 15000,
+    chunkMode: 'chapter', // 'chapter' | 'wordcount'
+    chunkSize: 100000,
     enablePlotOutline: false,
     enableLiteraryStyle: false,
     language: 'zh',
