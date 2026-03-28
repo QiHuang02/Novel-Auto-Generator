@@ -213,14 +213,6 @@ export function bindSettingEvents(deps = {}) {
         testChapterRegex,
     } = deps;
 
-    const applyChapterPreset = (regex) => {
-        if (!regex) return;
-        const regexInput = modalContainer.querySelector('#ttw-chapter-regex');
-        if (regexInput) regexInput.value = regex;
-        AppState.config.chapterRegex.pattern = regex;
-        saveCurrentSettings();
-    };
-
     EventDelegate.batchOn(modalContainer, {
         '#ttw-use-tavern-api': { change: () => { handleUseTavernApiChange(); saveCurrentSettings(); } },
         '#ttw-api-provider': { change: () => { handleProviderChange(); saveCurrentSettings(); } },
@@ -231,38 +223,24 @@ export function bindSettingEvents(deps = {}) {
         '#ttw-parallel-concurrency': { change: (e) => { AppState.config.parallel.concurrency = Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 3)); e.target.value = AppState.config.parallel.concurrency; saveCurrentSettings(); } },
         '#ttw-parallel-mode': { change: (e) => { AppState.config.parallel.mode = e.target.value; saveCurrentSettings(); } },
         '#ttw-volume-mode': { change: (e) => { AppState.processing.volumeMode = e.target.checked; const indicator = document.getElementById('ttw-volume-indicator'); if (indicator) indicator.style.display = AppState.processing.volumeMode ? 'block' : 'none'; } },
+        '#ttw-rechunk-btn': { click: rechunkMemories },
         '#ttw-add-category': { click: showAddCategoryModal },
         '#ttw-reset-categories': { click: async () => { if (await confirmAction('确定重置为默认分类配置吗？这将清除所有自定义分类。', { title: '重置分类', danger: true })) { await resetToDefaultCategories(); renderCategoriesList(); } } },
         '#ttw-add-default-entry': { click: showAddDefaultEntryModal },
         '#ttw-apply-default-entries': { click: () => { saveDefaultWorldbookEntriesUI(); const applied = applyDefaultWorldbookEntries(); if (applied) { showResultSection(true); updateWorldbookPreview(); ErrorHandler.showUserSuccess('默认世界书条目已应用！'); } else { ErrorHandler.showUserError('没有默认世界书条目'); } } },
         '#ttw-chapter-regex': { change: (e) => { AppState.config.chapterRegex.pattern = e.target.value; saveCurrentSettings(); } },
         '#ttw-test-chapter-regex': { click: testChapterRegex },
-        '.ttw-chapter-preset': { click: (e, btn) => { applyChapterPreset(btn.dataset.regex); } },
-        '.ttw-reset-prompt': { click: (e, btn) => { const type = btn.getAttribute('data-type'); const textarea = document.getElementById(`ttw-${type}-prompt`); if (textarea) { textarea.value = ''; saveCurrentSettings(); } } },
+        '.ttw-chapter-preset': { click: (e, btn) => { const regex = btn.dataset.regex; document.getElementById('ttw-chapter-regex').value = regex; AppState.config.chapterRegex.pattern = regex; saveCurrentSettings(); } },
+        '.ttw-reset-prompt': { click: (e, btn) => { const type = btn.getAttribute('data-type'); const textarea = document.getElementById(`ttw-${type}-prompt`); if (textarea) { textarea.value = ''; saveCurrentSettings(); } } }
     });
-
-    // 分块模式单选框
-    modalContainer.addEventListener('change', (e) => {
-        const target = e.target;
-        if (target && target.type === 'radio' && target.name === 'ttw-chunk-mode') {
-            AppState.settings.chunkMode = target.value;
-            saveCurrentSettings();
-        }
-    });
-
-    // 重新分块按钮 - 直接绑定
-    const rechunkBtn = modalContainer.querySelector('#ttw-rechunk-btn');
-    if (rechunkBtn) {
-        rechunkBtn.onclick = () => rechunkMemories();
-    }
 
     ['ttw-api-key', 'ttw-api-endpoint', 'ttw-api-model', 'ttw-chunk-size', 'ttw-api-timeout'].forEach((id) => {
-        const el = modalContainer.querySelector(`#${id}`);
+        const el = document.getElementById(id);
         if (el) el.addEventListener('change', saveCurrentSettings);
     });
 
     ['ttw-incremental-mode', 'ttw-volume-mode', 'ttw-enable-plot', 'ttw-enable-style', 'ttw-force-chapter-marker', 'ttw-allow-recursion'].forEach((id) => {
-        const el = modalContainer.querySelector(`#${id}`);
+        const el = document.getElementById(id);
         if (el) el.addEventListener('change', saveCurrentSettings);
     });
 }

@@ -1,4 +1,4 @@
-export function createRerollModals(deps = {}) {
+﻿export function createRerollModals(deps = {}) {
     const {
         AppState,
         ModalFactory,
@@ -12,10 +12,10 @@ export function createRerollModals(deps = {}) {
         updateMemoryQueueUI,
         findEntrySourceMemories,
         handleRerollMemory,
-        handleRerollSingleEntryAcrossSources,
-        handleBatchRerollEntries,
+        handleRerollSingleEntry,
         handleStopProcessing,
         setProcessingStatus,
+        getProcessingStatus,
         saveCurrentSettings,
         getEntryTotalTokens,
         updateWorldbookPreview,
@@ -125,29 +125,53 @@ export function createRerollModals(deps = {}) {
         confirmBtn.style.display = 'none';
         stopBtn.style.display = 'inline-block';
         progressDiv.style.display = 'block';
-        progressDiv.textContent = `进度: 0/${selectedIndices.length} 完成`;
+        setProcessingStatus('rerolling');
+
+        let completed = 0;
+        let failed = 0;
+        const total = selectedIndices.length;
+        let lastResult = null;
+
+        const renderProgress = () => {
+            progressDiv.textContent = `进度: ${completed}/${total} 完成${failed > 0 ? `, ${failed} 失败` : ''}`;
+        };
+        renderProgress();
+
+        const processBatch = async () => {
+            let index = 0;
+            const worker = async () => {
+                while (index < selectedIndices.length && !AppState.processing.isStopped) {
+                    const currentIndex = index++;
+                    const memoryIndex = selectedIndices[currentIndex];
+                    try {
+                        const result = await handleRerollSingleEntry({ memoryIndex, category, entryName, customPrompt });
+                        lastResult = result;
+                        completed++;
+                    } catch (error) {
+                        if (error.message !== 'ABORTED') {
+                            failed++;
+                        }
+                    }
+                    renderProgress();
+                }
+            };
+            const workers = [];
+            for (let i = 0; i < Math.min(concurrency, selectedIndices.length); i++) {
+                workers.push(worker());
+            }
+            await Promise.all(workers);
+        };
 
         try {
-            const outcome = await handleRerollSingleEntryAcrossSources({
-                category,
-                entryName,
-                memoryIndices: selectedIndices,
-                customPrompt,
-                concurrency,
-                onProgress: ({ completed, failed, total }) => {
-                    progressDiv.textContent = `进度: ${completed}/${total} 完成${failed > 0 ? `, ${failed} 失败` : ''}`;
-                },
-            });
+            await processBatch();
 
-            if (!outcome.stopped) {
-                if (outcome.lastResult) {
-                    const keywords = Array.isArray(outcome.lastResult['关键词'])
-                        ? outcome.lastResult['关键词'].join(', ')
-                        : (outcome.lastResult['关键词'] || '');
+            if (!AppState.processing.isStopped) {
+                if (lastResult) {
+                    const keywords = Array.isArray(lastResult['关键词']) ? lastResult['关键词'].join(', ') : (lastResult['关键词'] || '');
                     modal.querySelector('#ttw-entry-keywords-edit').value = keywords;
-                    modal.querySelector('#ttw-entry-content-edit').value = outcome.lastResult['内容'] || '';
+                    modal.querySelector('#ttw-entry-content-edit').value = lastResult['内容'] || '';
                 }
-                progressDiv.textContent = `✅ 完成! ${outcome.completed}/${outcome.total} 成功${outcome.failed > 0 ? `, ${outcome.failed} 失败` : ''}`;
+                progressDiv.textContent = `✅ 完成! ${completed}/${total} 成功${failed > 0 ? `, ${failed} 失败` : ''}`;
 
                 const newHistory = await MemoryHistoryDB.getEntryRollResults(category, entryName);
                 modal.querySelector('#ttw-entry-roll-history').innerHTML = buildRerollHistoryHtml(newHistory);
@@ -170,8 +194,6 @@ export function createRerollModals(deps = {}) {
                     });
                 });
                 if (callback) callback();
-            } else {
-                progressDiv.textContent = `已停止: ${outcome.completed}/${outcome.total} 完成${outcome.failed > 0 ? `, ${outcome.failed} 失败` : ''}`;
             }
         } catch (error) {
             if (error.message !== 'ABORTED') {
@@ -181,6 +203,7 @@ export function createRerollModals(deps = {}) {
             confirmBtn.disabled = false;
             confirmBtn.style.display = 'inline-block';
             stopBtn.style.display = 'none';
+            if (getProcessingStatus() !== 'stopped') setProcessingStatus('idle');
         }
     }
 
@@ -403,32 +426,54 @@ export function createRerollModals(deps = {}) {
             confirmBtn.disabled = true;
             confirmBtn.style.display = 'none';
             stopBtn.style.display = 'inline-block';
-            progressDiv.textContent = `进度: 0/${selectedEntries.length}`;
+            setProcessingStatus('rerolling');
 
-            try {
-                const outcome = await handleBatchRerollEntries({
-                    entries: selectedEntries,
-                    customPrompt,
-                    concurrency,
-                    onProgress: ({ completed, failed, total }) => {
-                        progressDiv.textContent = `进度: ${completed}/${total}${failed > 0 ? `, ${failed} 失败` : ''}`;
-                    },
-                });
+            let completed = 0;
+            let failed = 0;
+            const total = selectedEntries.length;
 
-                progressDiv.textContent = outcome.stopped
-                    ? `已停止: ${outcome.completed}/${outcome.total} 完成${outcome.failed > 0 ? `, ${outcome.failed} 失败` : ''}`
-                    : `✅ 完成: ${outcome.completed}/${outcome.total}${outcome.failed > 0 ? `, ${outcome.failed} 失败` : ''}`;
+            const renderProgress = () => {
+                progressDiv.textContent = `进度: ${completed}/${total}${failed > 0 ? `, ${failed} 失败` : ''}`;
+            };
+            renderProgress();
 
-                if (callback) callback();
-            } catch (error) {
-                if (error.message !== 'ABORTED') {
-                    progressDiv.textContent = `❌ 错误: ${error.message}`;
+            let index = 0;
+            const worker = async () => {
+                while (index < selectedEntries.length && !AppState.processing.isStopped) {
+                    const currentIndex = index++;
+                    const { category, entryName } = selectedEntries[currentIndex];
+                    const sources = findEntrySourceMemories(category, entryName);
+
+                    if (sources.length > 0) {
+                        try {
+                            await handleRerollSingleEntry({ memoryIndex: sources[0].memoryIndex, category, entryName, customPrompt });
+                            completed++;
+                        } catch (error) {
+                            if (error.message !== 'ABORTED') {
+                                failed++;
+                            }
+                        }
+                    }
+                    renderProgress();
                 }
-            } finally {
-                confirmBtn.disabled = false;
-                confirmBtn.style.display = 'inline-block';
-                stopBtn.style.display = 'none';
+            };
+
+            const workers = [];
+            for (let i = 0; i < Math.min(concurrency, selectedEntries.length); i++) {
+                workers.push(worker());
             }
+            await Promise.all(workers);
+
+            progressDiv.textContent = AppState.processing.isStopped
+                ? `已停止: ${completed}/${total} 完成`
+                : `✅ 完成: ${completed}/${total}${failed > 0 ? `, ${failed} 失败` : ''}`;
+
+            confirmBtn.disabled = false;
+            confirmBtn.style.display = 'inline-block';
+            stopBtn.style.display = 'none';
+            if (getProcessingStatus() !== 'stopped') setProcessingStatus('idle');
+
+            if (callback) callback();
         });
 
         stopBtn.addEventListener('click', () => {
@@ -553,14 +598,21 @@ export function createRerollModals(deps = {}) {
                 if (!await confirmAction('编辑框中的JSON格式有误，是否使用原始结果？\n\n点击"取消"可继续编辑修复。', { title: 'JSON 格式有误' })) return;
                 resultToUse = roll.result;
             }
-            memory.result = resultToUse;
-            memory.processed = true;
-            memory.failed = false;
-            rebuildWorldbookFromMemories();
-            updateMemoryQueueUI();
-            updateWorldbookPreview();
-            ModalFactory.close(modal);
-            ErrorHandler.showUserSuccess(`已使用 Roll #${rollIndex + 1}${resultToUse !== roll.result ? '（已编辑）' : ''}`);
+            try {
+                memory.result = resultToUse;
+                memory.processed = true;
+                memory.failed = false;
+                memory.failedError = null;
+                await MemoryHistoryDB.saveRollResult(index, resultToUse);
+                rebuildWorldbookFromMemories();
+                updateMemoryQueueUI();
+                updateWorldbookPreview();
+                ModalFactory.close(modal);
+                ErrorHandler.showUserSuccess(`已使用 Roll #${rollIndex + 1}${resultToUse !== roll.result ? '（已编辑）' : ''}`);
+            } catch (error) {
+                Logger.error('Reroll', '应用 Roll 结果失败:', error);
+                ErrorHandler.showUserError('应用结果失败: ' + error.message);
+            }
         });
 
         detailDiv.querySelector('#ttw-save-edited-roll').addEventListener('click', async () => {
@@ -706,6 +758,3 @@ export function createRerollModals(deps = {}) {
         showRollHistorySelector,
     };
 }
-
-
-

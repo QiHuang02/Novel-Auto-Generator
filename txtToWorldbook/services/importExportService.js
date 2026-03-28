@@ -1,96 +1,29 @@
 export function createImportExportService(deps = {}) {
     const {
         AppState,
-        Logger,
         ErrorHandler,
         defaultSettings,
-        saveCurrentSettings = () => {},
-        saveCustomCategories = async () => {},
-        updateSettingsUI = () => {},
-        renderCategoriesList = () => {},
-        renderDefaultWorldbookEntriesUI = () => {},
-        updateChapterRegexUI = () => {},
-        convertSTFormatToInternal,
-        showMergeOptionsModal,
-        getAllVolumesWorldbook = () => ({}),
+        getAllVolumesWorldbook,
         convertToSillyTavernFormat,
-        getExportBaseName = () => '未命名',
+        getExportBaseName,
+        saveCurrentSettings,
+        saveCustomCategories,
+        updateSettingsUI,
+        renderCategoriesList,
+        renderDefaultWorldbookEntriesUI,
+        updateChapterRegexUI,
     } = deps;
 
-    function createTimeString() {
-        return new Date()
-            .toLocaleString('zh-CN', {
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-            })
+    function exportCharacterCard() {
+        const timeString = new Date()
+            .toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
             .replace(/[:/\s]/g, '')
             .replace(/,/g, '-');
-    }
 
-    function downloadJson(filename, data) {
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
-    }
-
-    async function importAndMergeWorldbook() {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.json';
-
-        input.onchange = async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            try {
-                const content = await file.text();
-                const importedData = JSON.parse(content);
-
-                let worldbookToMerge = {};
-                let internalDuplicates = [];
-
-                if (importedData.entries) {
-                    const result = convertSTFormatToInternal(importedData, true);
-                    worldbookToMerge = result.worldbook;
-                    internalDuplicates = result.duplicates;
-                } else if (importedData.merged) {
-                    worldbookToMerge = importedData.merged;
-                } else {
-                    worldbookToMerge = importedData;
-                }
-
-                AppState.persistent.pendingImport = {
-                    worldbook: worldbookToMerge,
-                    fileName: file.name,
-                    timestamp: Date.now(),
-                    internalDuplicates,
-                };
-
-                showMergeOptionsModal(worldbookToMerge, file.name, internalDuplicates);
-            } catch (error) {
-                Logger.error('Import', '导入失败:', error);
-                ErrorHandler.showUserError(`导入失败: ${error.message}`);
-            }
-        };
-
-        input.click();
-    }
-
-    function exportCharacterCard() {
-        const timeString = createTimeString();
         const baseName = getExportBaseName('角色卡');
 
         try {
-            const worldbookToExport = AppState.processing.volumeMode
-                ? getAllVolumesWorldbook()
-                : AppState.worldbook.generated;
+            const worldbookToExport = AppState.processing.volumeMode ? getAllVolumesWorldbook() : AppState.worldbook.generated;
             const stWorldbook = convertToSillyTavernFormat(worldbookToExport);
 
             const v2Entries = stWorldbook.entries.map((entry, index) => ({
@@ -171,27 +104,42 @@ export function createImportExportService(deps = {}) {
                 },
             };
 
-            const fileName = `${baseName}-角色卡-${timeString}.json`;
-            downloadJson(fileName, characterCard);
+            const fileName = `${baseName}-角色卡-${timeString}`;
+            const blob = new Blob([JSON.stringify(characterCard, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName + '.json';
+            a.click();
+            URL.revokeObjectURL(url);
             ErrorHandler.showUserSuccess('已导出SillyTavern角色卡（世界书已绑定到角色卡）');
         } catch (error) {
-            ErrorHandler.showUserError(`导出角色卡失败：${error.message}`);
+            ErrorHandler.showUserError('导出角色卡失败：' + error.message);
         }
     }
 
     function exportToSillyTavern() {
-        const timeString = createTimeString();
+        const timeString = new Date()
+            .toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+            .replace(/[:/\s]/g, '')
+            .replace(/,/g, '-');
         try {
-            const worldbookToExport = AppState.processing.volumeMode
-                ? getAllVolumesWorldbook()
-                : AppState.worldbook.generated;
+            const worldbookToExport = AppState.processing.volumeMode ? getAllVolumesWorldbook() : AppState.worldbook.generated;
             const sillyTavernWorldbook = convertToSillyTavernFormat(worldbookToExport);
+
             const baseName = getExportBaseName('世界书');
-            const fileName = `${baseName}-世界书-${timeString}.json`;
-            downloadJson(fileName, sillyTavernWorldbook);
+
+            const fileName = `${baseName}-世界书-${timeString}`;
+            const blob = new Blob([JSON.stringify(sillyTavernWorldbook, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName + '.json';
+            a.click();
+            URL.revokeObjectURL(url);
             ErrorHandler.showUserSuccess('已导出世界书');
         } catch (error) {
-            ErrorHandler.showUserError(`转换失败：${error.message}`);
+            ErrorHandler.showUserError('转换失败：' + error.message);
         }
     }
 
@@ -200,12 +148,20 @@ export function createImportExportService(deps = {}) {
             ErrorHandler.showUserError('没有分卷数据');
             return;
         }
-
-        const timeString = createTimeString();
-        for (let i = 0; i < AppState.worldbook.volumes.length; i += 1) {
+        const timeString = new Date()
+            .toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+            .replace(/[:/\s]/g, '')
+            .replace(/,/g, '-');
+        for (let i = 0; i < AppState.worldbook.volumes.length; i++) {
             const volume = AppState.worldbook.volumes[i];
             const fileName = `${getExportBaseName('世界书')}-世界书-卷${i + 1}-${timeString}.json`;
-            downloadJson(fileName, volume.worldbook);
+            const blob = new Blob([JSON.stringify(volume.worldbook, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            a.click();
+            URL.revokeObjectURL(url);
         }
         ErrorHandler.showUserSuccess(`已导出 ${AppState.worldbook.volumes.length} 卷`);
     }
@@ -238,9 +194,18 @@ export function createImportExportService(deps = {}) {
             consolidateCategoryPresetMap: AppState.settings.consolidateCategoryPresetMap,
             promptMessageChain: AppState.settings.promptMessageChain,
         };
-
-        const timeString = createTimeString();
-        downloadJson(`TxtToWorldbook-配置-${timeString}.json`, exportData);
+        const timeString = new Date()
+            .toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+            .replace(/[:/\s]/g, '')
+            .replace(/,/g, '-');
+        const fileName = `TxtToWorldbook-配置-${timeString}.json`;
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
         ErrorHandler.showUserSuccess('配置已导出！（包含提示词配置、整理条目预设和默认世界书条目）');
     }
 
@@ -248,11 +213,9 @@ export function createImportExportService(deps = {}) {
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = '.json';
-
         input.onchange = async (e) => {
             const file = e.target.files[0];
             if (!file) return;
-
             try {
                 const content = await file.text();
                 const data = JSON.parse(content);
@@ -297,20 +260,28 @@ export function createImportExportService(deps = {}) {
                 }
 
                 if (data.prompts) {
-                    if (data.prompts.worldbookPrompt !== undefined) AppState.settings.customWorldbookPrompt = data.prompts.worldbookPrompt;
-                    if (data.prompts.plotPrompt !== undefined) AppState.settings.customPlotPrompt = data.prompts.plotPrompt;
-                    if (data.prompts.stylePrompt !== undefined) AppState.settings.customStylePrompt = data.prompts.stylePrompt;
-                    if (data.prompts.mergePrompt !== undefined) AppState.settings.customMergePrompt = data.prompts.mergePrompt;
-                    if (data.prompts.rerollPrompt !== undefined) AppState.settings.customRerollPrompt = data.prompts.rerollPrompt;
-                    if (data.prompts.batchRerollPrompt !== undefined) AppState.settings.customBatchRerollPrompt = data.prompts.batchRerollPrompt;
-
+                    if (data.prompts.worldbookPrompt !== undefined) {
+                        AppState.settings.customWorldbookPrompt = data.prompts.worldbookPrompt;
+                    }
+                    if (data.prompts.plotPrompt !== undefined) {
+                        AppState.settings.customPlotPrompt = data.prompts.plotPrompt;
+                    }
+                    if (data.prompts.stylePrompt !== undefined) {
+                        AppState.settings.customStylePrompt = data.prompts.stylePrompt;
+                    }
+                    if (data.prompts.mergePrompt !== undefined) {
+                        AppState.settings.customMergePrompt = data.prompts.mergePrompt;
+                    }
+                    if (data.prompts.rerollPrompt !== undefined) {
+                        AppState.settings.customRerollPrompt = data.prompts.rerollPrompt;
+                    }
+                    if (data.prompts.batchRerollPrompt !== undefined) {
+                        AppState.settings.customBatchRerollPrompt = data.prompts.batchRerollPrompt;
+                    }
                     if (data.prompts.consolidatePrompt && data.prompts.consolidatePrompt.trim()) {
                         if (!AppState.settings.consolidatePromptPresets) AppState.settings.consolidatePromptPresets = [];
                         if (!AppState.settings.consolidatePromptPresets.some((p) => p.name === '旧版自定义')) {
-                            AppState.settings.consolidatePromptPresets.push({
-                                name: '旧版自定义',
-                                prompt: data.prompts.consolidatePrompt,
-                            });
+                            AppState.settings.consolidatePromptPresets.push({ name: '旧版自定义', prompt: data.prompts.consolidatePrompt });
                         }
                     }
                     if (data.prompts.defaultWorldbookEntries !== undefined) {
@@ -323,17 +294,16 @@ export function createImportExportService(deps = {}) {
                 renderDefaultWorldbookEntriesUI();
                 updateChapterRegexUI();
                 saveCurrentSettings();
+
                 ErrorHandler.showUserSuccess('配置导入成功！');
             } catch (error) {
-                ErrorHandler.showUserError(`导入失败: ${error.message}`);
+                ErrorHandler.showUserError('导入失败: ' + error.message);
             }
         };
-
         input.click();
     }
 
     return {
-        importAndMergeWorldbook,
         exportCharacterCard,
         exportToSillyTavern,
         exportVolumes,

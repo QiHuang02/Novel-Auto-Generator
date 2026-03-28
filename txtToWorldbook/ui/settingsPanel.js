@@ -59,36 +59,17 @@ function buildParallelConfigHtml() {
     </div>`;
 }
 
-function buildChunkingSettingsHtml() {
+function buildChapterRegexHtml() {
     return `
     <div class="ttw-setting-card" style="background:rgba(230,126,34,0.1);border:1px solid rgba(230,126,34,0.3);">
-        <div style="font-weight:bold;color:#e67e22;margin-bottom:10px;">✂️ 分块设置</div>
-        <div style="display:flex;flex-direction:column;gap:10px;">
-            <div style="padding:10px;background:rgba(0,0,0,0.15);border-radius:6px;border:1px solid rgba(255,255,255,0.1);">
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px;">
-                    <input type="radio" name="ttw-chunk-mode" id="ttw-chunk-mode-chapter" value="chapter" checked>
-                    <span style="font-weight:500;">📖 按章节分块</span>
-                </label>
-                <div class="ttw-setting-hint" style="margin-bottom:6px;">章节检测正则</div>
-                <input type="text" id="ttw-chapter-regex" class="ttw-input" value="第[零一二三四五六七八九十百千万0-9]+[章回卷节部篇]" style="margin-bottom:6px;">
-                <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                    <button type="button" class="ttw-btn ttw-btn-small ttw-chapter-preset" data-regex="第[零一二三四五六七八九十百千万0-9]+[章回卷节部篇]">中文通用</button>
-                    <button type="button" class="ttw-btn ttw-btn-small ttw-chapter-preset" data-regex="Chapter\\s*\\d+">英文Chapter</button>
-                    <button type="button" class="ttw-btn ttw-btn-small ttw-chapter-preset" data-regex="第\\d+章">数字章节</button>
-                    <button type="button" id="ttw-test-chapter-regex" class="ttw-btn ttw-btn-small" style="background:#e67e22;">🔍 检测</button>
-                </div>
-            </div>
-            <div style="padding:10px;background:rgba(0,0,0,0.15);border-radius:6px;border:1px solid rgba(255,255,255,0.1);">
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px;">
-                    <input type="radio" name="ttw-chunk-mode" id="ttw-chunk-mode-wordcount" value="wordcount">
-                    <span style="font-weight:500;">📊 按字数分块</span>
-                </label>
-                <div class="ttw-setting-hint" style="margin-bottom:6px;">每块字数</div>
-                <input type="number" id="ttw-chunk-size" value="100000" min="1000" max="500000" class="ttw-input" style="max-width:200px;">
-            </div>
-        </div>
-        <div style="margin-top:12px;">
-            <button type="button" id="ttw-rechunk-btn" class="ttw-btn ttw-btn-small" style="background:#e67e22;">🔄 重新分块</button>
+        <div style="font-weight:bold;color:#e67e22;margin-bottom:10px;">📖 章回正则设置</div>
+        <div class="ttw-setting-hint" style="margin-bottom:8px;">自定义章节检测正则表达式</div>
+        <input type="text" id="ttw-chapter-regex" class="ttw-input" value="第[零一二三四五六七八九十百千万0-9]+[章回卷节部篇]" style="margin-bottom:8px;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="ttw-btn ttw-btn-small ttw-chapter-preset" data-regex="第[零一二三四五六七八九十百千万0-9]+[章回卷节部篇]">中文通用</button>
+            <button class="ttw-btn ttw-btn-small ttw-chapter-preset" data-regex="Chapter\\s*\\d+">英文Chapter</button>
+            <button class="ttw-btn ttw-btn-small ttw-chapter-preset" data-regex="第\\d+章">数字章节</button>
+            <button id="ttw-test-chapter-regex" class="ttw-btn ttw-btn-small" style="background:#e67e22;">🔍 检测</button>
         </div>
     </div>`;
 }
@@ -97,8 +78,15 @@ function buildBasicSettingsHtml() {
     return `
     <div style="display:flex;gap:12px;margin-bottom:12px;align-items:flex-end;">
         <div style="flex:1;">
+            <label class="ttw-label">每块字数</label>
+            <input type="number" id="ttw-chunk-size" value="15000" min="1000" max="500000" class="ttw-input">
+        </div>
+        <div style="flex:1;">
             <label class="ttw-label">API超时(秒)</label>
             <input type="number" id="ttw-api-timeout" value="120" min="30" max="600" class="ttw-input">
+        </div>
+        <div>
+            <button id="ttw-rechunk-btn" class="ttw-btn ttw-btn-small" style="background:rgba(230,126,34,0.5);" title="修改字数后点击重新分块">🔄 重新分块</button>
         </div>
     </div>`;
 }
@@ -178,7 +166,7 @@ export function buildSettingsHtml() {
             </div>
             ${buildCustomApiSectionHtml()}
             ${buildParallelConfigHtml()}
-            ${buildChunkingSettingsHtml()}
+            ${buildChapterRegexHtml()}
             ${buildBasicSettingsHtml()}
             ${buildCheckboxOptionsHtml()}
             ${buildFilterTagsHtml()}
@@ -507,18 +495,6 @@ export function hydrateSettingsFromState(deps = {}) {
 
     const chunkSizeEl = document.getElementById('ttw-chunk-size');
     if (chunkSizeEl) chunkSizeEl.value = AppState.settings.chunkSize;
-
-    const chunkMode = AppState.settings.chunkMode || 'chapter';
-    const chapterModeEl = document.getElementById('ttw-chunk-mode-chapter');
-    const wordcountModeEl = document.getElementById('ttw-chunk-mode-wordcount');
-
-    if (chapterModeEl) chapterModeEl.checked = chunkMode === 'chapter';
-    if (wordcountModeEl) wordcountModeEl.checked = chunkMode === 'wordcount';
-
-    const chapterRegexEl = document.getElementById('ttw-chapter-regex');
-    if (chapterRegexEl) {
-        chapterRegexEl.value = AppState.config.chapterRegex?.pattern || '第[零一二三四五六七八九十百千万0-9]+[章回卷节部篇]';
-    }
 
     const apiTimeoutEl = document.getElementById('ttw-api-timeout');
     if (apiTimeoutEl) apiTimeoutEl.value = Math.round((AppState.settings.apiTimeout || 120000) / 1000);
